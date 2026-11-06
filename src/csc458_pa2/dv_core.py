@@ -132,7 +132,34 @@ class DVCore(RoutingCore):
                 ``neighbor``.
             """
             # TODO 1: Implement _advertisement_for.
-            return {}  # Students must replace this line with their implementation
+
+            adv: dict[str, int] = {}
+
+            prefixes: set[str] = set()
+
+            for prefix in self.known_prefixes:
+                prefixes.add(prefix)
+            for prefix in self.routes.keys():
+                prefixes.add(prefix)
+
+            sorted_prefixes = sorted(prefixes)
+
+            for prefix in sorted_prefixes:
+                if prefix in self.routes:
+                    if self.routes[prefix].next_hop == neighbor:
+                        if self.mode == "split_horizon":
+                            pass
+                        elif self.mode == "poison_reverse":
+                            adv[prefix] = INFINITY
+                        else:
+                            adv[prefix] = self.routes[prefix].metric
+                    else:
+                        adv[prefix] = self.routes[prefix].metric
+                else:
+                    adv[prefix] = INFINITY
+
+            
+            return adv  # Students must replace this line with their implementation
     
     def _recompute_routes(self) -> bool:
         """Rebuild this router's table with the Bellman-Ford recurrence.
@@ -198,7 +225,43 @@ class DVCore(RoutingCore):
             from the old table; otherwise ``False``.
         """
         # TODO 2: Implement _recompute_routes.
-        return False  # Students must replace this line with their implementation
+        routes: dict[str, Route] = {}
+
+        # Go through all neighbor vectors and their inner prefixes
+        for neighbor, vector in self.neighbor_vectors.items():
+            for prefix, cost in vector.items():
+                # Calc total cost
+                total_cost = min(INFINITY,
+                           self.neighbors[neighbor] + cost)
+                # If there's already the prefix in the route, check if it has a smaller metric or equal metric and smaller lexographically
+                if prefix in routes:
+                    if total_cost < routes[prefix].metric or \
+                            (total_cost == routes[prefix].metric and neighbor < str(routes[prefix].next_hop)):
+                        routes[prefix] = Route(total_cost, neighbor)
+                    else:
+                        continue
+                else:
+                    # Check infinity case
+                    if total_cost == INFINITY:
+                        routes[prefix] = Route(INFINITY, None)
+                    else:
+                        routes[prefix] = Route(total_cost, neighbor)
+
+                # Add to known_prefix
+                self.known_prefixes.add(prefix)
+
+        # Go through remaining known prefixes
+        for prefix in self.known_prefixes:
+            if prefix not in routes:
+                routes[prefix] = Route(INFINITY, None)
+
+        # Add route to self
+        routes[self.own_prefix] = Route(0, None)
+
+        is_diff = routes != self.routes
+        self.routes = routes
+
+        return is_diff  # Students must replace this line with their implementation
 
     def _send_updates(self, only: str | None = None) -> None:
         """Send a full DV to every active neighbor, or only one neighbor."""
@@ -283,6 +346,35 @@ class DVCore(RoutingCore):
                 or ``None`` when the link is down.
         """
         # TODO 3: Implement on_link_change.
+
+        # Handle link down
+        if cost == None:
+            self.neighbors.pop(neighbor, 0)
+            self.neighbor_vectors.pop(neighbor, 0)
+
+            # Check if the table needs to be recomputed
+            if self._recompute_routes() == True:
+                self._send_updates()
+            return
+
+        # Reject invalid cost
+        if cost < 1 or cost >= INFINITY:
+            return
+
+        # Create new link 
+        if neighbor not in self.neighbors:
+            self.neighbors[neighbor] = cost
+            self.neighbor_vectors[neighbor] = {}
+        else:
+            self.neighbors[neighbor] = cost
+
+        # Update if routing changed
+        if self._recompute_routes() == True:
+            self._send_updates()
+        else:
+            self._send_updates(neighbor)
+
+        
         pass
 
     def on_control(self, src: str, message: ControlMessage) -> None:
@@ -361,7 +453,32 @@ class DVCore(RoutingCore):
             message: Candidate DV control message to validate and process.
         """
         # TODO 4: Implement on_control.
-        pass
+        # Discard if not from neighbor
+        if src not in self.neighbors:
+            return
+
+        # Discard if doesn't meet message criterions
+        if message.protocol != "DV" or message.payload["type"] != "dv" or \
+                (not isinstance(message.payload["vector"],dict)):
+            return
+
+        for prefix, cost in message.payload["vector"].items():
+            # Reject invalid prefix
+            if (not isinstance(prefix, str)) or ('/' not in prefix):
+                continue
+            # Reject invalid cost
+            if (type(cost) is not int) or cost < 0:
+                continue
+
+            capped_cost = min(INFINITY, cost)
+            self.neighbor_vectors[src][prefix] = capped_cost
+
+            self.known_prefixes.add(prefix)
+
+        # Recalculate routes and update neighbors
+        if self._recompute_routes() == True:
+            self._send_updates()
+
 
     def on_periodic(self) -> None:
         """Send a periodic full-vector refresh."""
