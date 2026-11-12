@@ -179,7 +179,9 @@ class LSCore(RoutingCore):
                 exclude: Optional neighbor that must not receive this flooded copy.
             """
             # TODO 1: Flood this LSA to every active neighbor except ``exclude``.
-            pass
+            for neighbor in sorted(self.neighbors):
+                if neighbor != exclude:
+                    self._send_lsa(neighbor, origin, entry)
     
     def _originate(self) -> None:
         """Create, install locally, and flood a new LSA for this router.
@@ -229,7 +231,19 @@ class LSCore(RoutingCore):
         True
         """
         # TODO 2: Create, install, recompute for, and flood a new self-LSA.
-        pass
+        self.own_seq += 1
+        links = {}
+        for neighbor in sorted(self.neighbors):
+            links[neighbor] = self.neighbors[neighbor]
+        entry = {
+            "seq": self.own_seq,
+            "prefix": self.own_prefix,
+            "links": links,
+        }
+        self.lsdb[self.router_id] = entry
+        self._recompute_routes()
+        self._flood(self.router_id, entry)
+        
 
     def _recompute_routes(self) -> None:
         """Rebuild prefix routes from the current link-state database.
@@ -296,6 +310,15 @@ class LSCore(RoutingCore):
         # when the current LSAs for A and B advertise one another with the same
         # cost.
 
+        for origin, entry in self.lsdb.items():
+            for neighbor, cost in entry["links"].items():
+                neighbor_lsa = self.lsdb.get(neighbor)
+                if neighbor_lsa is None:
+                    continue
+                if neighbor_lsa["links"].get(origin) == cost:
+                    graph[origin][neighbor] = cost
+                    graph[neighbor][origin] = cost
+
         # Stage 2 (provided setup): a route to this router has cost zero and no
         # next hop.  Seed the heap with paths to its immediate graph neighbors.
         router_routes: dict[str, Route] = {self.router_id: Route(0, None)}
@@ -325,7 +348,15 @@ class LSCore(RoutingCore):
             # candidate already in ``best``.  Otherwise accept it, update
             # ``router_routes``, and push every cycle-free one-link extension
             # onto ``heap``.
-
+            if current_router in best and best[current_router] <= candidate:
+                continue
+            best[current_router] = candidate
+            router_routes[current_router] = Route(distance, first_hop)
+            for next, cost in graph[current_router].items():
+                if next not in complete_path:
+                    new_distance = distance + cost
+                    new_path = complete_path + (next,)
+                    heapq.heappush(heap, (new_distance, first_hop, new_path, next))
         # Stage 3 (provided entirely): For every remote LSDB origin reachable
         # according to ``router_routes``, map its advertised prefix to its
         # router route.
@@ -372,7 +403,18 @@ class LSCore(RoutingCore):
                 ``None`` when the link is down.
         """
         # TODO 5: Process the link event, originate, and synchronize if needed.
-        pass
+        if cost is None:
+            self.neighbors.pop(neighbor, None)
+            self._originate()
+            return
+        if type(cost) is not int or not 1 <= cost < INFINITY:
+            return
+        new_neighbor = neighbor not in self.neighbors
+        self.neighbors[neighbor] = cost
+        self._originate()
+        if new_neighbor:
+            for origin in sorted(self.lsdb):
+                self._send_lsa(neighbor, origin, self.lsdb[origin])
 
     def on_control(self, src: str, message: ControlMessage) -> None:
         """Validate and process an LSA received from one active neighbor.
@@ -422,7 +464,48 @@ class LSCore(RoutingCore):
             message: Candidate LS control message to validate and process.
         """
         # TODO 6: Validate and process this received LSA.
-        pass
+        if src not in self.neighbors or message.protocol != "LS":
+            return
+        payload = message.payload
+        if not isinstance(payload, dict) or payload.get("type") != "lsa":
+            return
+        origin = payload.get("origin")
+        prefix = payload.get("prefix")
+        seq = payload.get("seq")
+        links = payload.get("links")
+
+        if (not isinstance(origin, str)
+            or not isinstance(prefix, str) or "/" not in prefix
+            or type(seq) is not int or seq < 0
+            or not isinstance(links, dict)
+        ):
+            return
+
+        for neighbor, cost, in links.items():
+            if not isinstance(neighbor, str) or type(cost) is not int or not 1 <= cost < INFINITY:
+                return
+
+        if origin == self.router_id:
+            if seq > self.own_seq:
+                self.own_seq = seq
+                self._originate()
+            return
+
+        current = self.lsdb.get(origin)
+        if current is not None and seq <= current["seq"]:
+            return
+        
+        sorted_links = {}
+        for neighbor in sorted(links):
+            sorted_links[neighbor] = links[neighbor]
+        entry = {
+            "seq": seq,
+            "prefix": prefix,
+            "links": sorted_links,
+        }
+        self.lsdb[origin] = entry
+        self._recompute_routes()
+        self._flood(origin, entry, exclude=src)
 
     def on_periodic(self) -> None:
         """Refresh the router's own LSA."""
