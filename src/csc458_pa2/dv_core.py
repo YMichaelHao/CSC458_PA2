@@ -152,9 +152,9 @@ class DVCore(RoutingCore):
                         elif self.mode == "poison_reverse":
                             adv[prefix] = INFINITY
                         else:
-                            adv[prefix] = self.routes[prefix].metric
+                            adv[prefix] = min(self.routes[prefix].metric, INFINITY)
                     else:
-                        adv[prefix] = self.routes[prefix].metric
+                        adv[prefix] = min(self.routes[prefix].metric, INFINITY)
                 else:
                     adv[prefix] = INFINITY
 
@@ -230,6 +230,10 @@ class DVCore(RoutingCore):
         # Go through all neighbor vectors and their inner prefixes
         for neighbor, vector in self.neighbor_vectors.items():
             for prefix, cost in vector.items():
+
+                self.known_prefixes.add(prefix)
+                if neighbor not in self.neighbors:
+                    continue
                 # Calc total cost
                 total_cost = min(INFINITY,
                            self.neighbors[neighbor] + cost)
@@ -247,8 +251,6 @@ class DVCore(RoutingCore):
                     else:
                         routes[prefix] = Route(total_cost, neighbor)
 
-                # Add to known_prefix
-                self.known_prefixes.add(prefix)
 
         # Go through remaining known prefixes
         for prefix in self.known_prefixes:
@@ -358,11 +360,11 @@ class DVCore(RoutingCore):
             return
 
         # Reject invalid cost
-        if cost < 1 or cost >= INFINITY:
+        if type(cost) is not int or not 1 <= cost < INFINITY:
             return
 
         # Create new link 
-        if neighbor not in self.neighbors:
+        if neighbor not in self.neighbor_vectors:
             self.neighbors[neighbor] = cost
             self.neighbor_vectors[neighbor] = {}
         else:
@@ -458,10 +460,11 @@ class DVCore(RoutingCore):
             return
 
         # Discard if doesn't meet message criterions
-        if message.protocol != "DV" or message.payload["type"] != "dv" or \
-                (not isinstance(message.payload["vector"],dict)):
+        if message.protocol != "DV" or message.payload.get("type") != "dv" or \
+                (not isinstance(message.payload.get("vector"),dict)):
             return
 
+        new_vector: dict[str, int] = {}
         for prefix, cost in message.payload["vector"].items():
             # Reject invalid prefix
             if (not isinstance(prefix, str)) or ('/' not in prefix):
@@ -470,10 +473,10 @@ class DVCore(RoutingCore):
             if (type(cost) is not int) or cost < 0:
                 continue
 
-            capped_cost = min(INFINITY, cost)
-            self.neighbor_vectors[src][prefix] = capped_cost
+            new_vector[prefix] = min(cost, INFINITY)
 
             self.known_prefixes.add(prefix)
+        self.neighbor_vectors[src] = new_vector
 
         # Recalculate routes and update neighbors
         if self._recompute_routes() == True:
