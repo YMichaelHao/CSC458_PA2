@@ -271,26 +271,213 @@ After link r2 r3 down, R1 still sends h3's traffic to R2 which has lost its rout
 
 Provide one DV and one LS example showing that the protocol state, Linux `ip route`, `ping`, and `traceroute` agree with the expected shortest path.
 
+#### DV
+- status:
+    ```
+    csc458> status r1
+    {'debug': '10.2.0.0/24=2 via R2; 10.3.0.0/24=3 via R2; 10.4.0.0/24=5 via R2; 10.5.0.0/24=6 via R2', 'neighbors': {'R2': {'active': True, 'cost': 2}, 'R3': {'active': True, 'cost': 7}}, 'own_prefix': '10.1.0.0/24', 'protocol': 'DV', 'router_id': 'R1', 'routes': {'10.2.0.0/24': {'metric': 2, 'next_hop': 'R2'}, '10.3.0.0/24': {'metric': 3, 'next_hop': 'R2'}, '10.4.0.0/24': {'metric': 5, 'next_hop': 'R2'}, '10.5.0.0/24': {'metric': 6, 'next_hop': 'R2'}}, 'stats': {'bytes_received': 103625, 'bytes_sent': 105027, 'messages_received': 784, 'messages_sent': 786}, 'time': 1794550481.130901}
+    csc458> status r4
+    {'debug': '10.1.0.0/24=5 via R3; 10.2.0.0/24=3 via R3; 10.3.0.0/24=2 via R3; 10.5.0.0/24=1 via R5', 'neighbors': {'R2': {'active': True, 'cost': 6}, 'R3': {'active': True, 'cost': 2}, 'R5': {'active': True, 'cost': 1}}, 'own_prefix': '10.4.0.0/24', 'protocol': 'DV', 'router_id': 'R4', 'routes': {'10.1.0.0/24': {'metric': 5, 'next_hop': 'R3'}, '10.2.0.0/24': {'metric': 3, 'next_hop': 'R3'}, '10.3.0.0/24': {'metric': 2, 'next_hop': 'R3'}, '10.5.0.0/24': {'metric': 1, 'next_hop': 'R5'}}, 'stats': {'bytes_received': 161151, 'bytes_sent': 160310, 'messages_received': 1206, 'messages_sent': 1206}, 'time': 1794550498.1812308}
+    ```
+- ip route:
+    ```
+    csc458> r1 ip route
+    10.1.0.0/24 dev r1-stub proto kernel scope link src 10.1.0.1 
+    10.2.0.0/24 via 10.254.0.6 dev r1-r2 proto static metric 2 
+    10.3.0.0/24 via 10.254.0.6 dev r1-r2 proto static metric 3 
+    10.3.0.0/24 via 10.254.0.10 dev r1-r3 proto static metric 7 
+    10.4.0.0/24 via 10.254.0.6 dev r1-r2 proto static metric 5 
+    10.4.0.0/24 via 10.254.0.6 dev r1-r2 proto static metric 8 
+    10.5.0.0/24 via 10.254.0.6 dev r1-r2 proto static metric 6 
+    10.5.0.0/24 via 10.254.0.6 dev r1-r2 proto static metric 9 
+    10.254.0.4/30 dev r1-r2 proto kernel scope link src 10.254.0.5 
+    10.254.0.8/30 dev r1-r3 proto kernel scope link src 10.254.0.9 
+    csc458> r4 ip route
+    10.1.0.0/24 via 10.254.3.45 dev r4-r3 proto static metric 5 
+    10.1.0.0/24 via 10.254.1.157 dev r4-r2 proto static metric 8 
+    10.1.0.0/24 via 10.254.3.45 dev r4-r3 proto static metric 9 
+    10.2.0.0/24 via 10.254.3.45 dev r4-r3 proto static metric 3 
+    10.2.0.0/24 via 10.254.1.157 dev r4-r2 proto static metric 6 
+    10.3.0.0/24 via 10.254.3.45 dev r4-r3 proto static metric 2 
+    10.4.0.0/24 dev r4-stub proto kernel scope link src 10.4.0.1 
+    10.5.0.0/24 via 10.254.4.194 dev r4-r5 proto static metric 1 
+    10.254.1.156/30 dev r4-r2 proto kernel scope link src 10.254.1.158 
+    10.254.3.44/30 dev r4-r3 proto kernel scope link src 10.254.3.46 
+    10.254.4.192/30 dev r4-r5 proto kernel scope link src 10.254.4.193
+    ```
+- ping:
+    ```
+    csc458> h1 ping -c 5 h4
+    PING 10.4.0.2 (10.4.0.2) 56(84) bytes of data.
+    64 bytes from 10.4.0.2: icmp_seq=1 ttl=60 time=6.94 ms
+    64 bytes from 10.4.0.2: icmp_seq=2 ttl=60 time=9.62 ms
+    64 bytes from 10.4.0.2: icmp_seq=3 ttl=60 time=10.3 ms
+    64 bytes from 10.4.0.2: icmp_seq=4 ttl=60 time=10.3 ms
+    64 bytes from 10.4.0.2: icmp_seq=5 ttl=60 time=6.82 ms
+
+    --- 10.4.0.2 ping statistics ---
+    5 packets transmitted, 5 received, 0% packet loss, time 4015ms
+    rtt min/avg/max/mdev = 6.821/8.793/10.328/1.583 ms
+    csc458> h4 ping -c 5 h1
+    PING 10.1.0.2 (10.1.0.2) 56(84) bytes of data.
+    64 bytes from 10.1.0.2: icmp_seq=1 ttl=60 time=10.5 ms
+    64 bytes from 10.1.0.2: icmp_seq=2 ttl=60 time=6.96 ms
+    64 bytes from 10.1.0.2: icmp_seq=3 ttl=60 time=7.89 ms
+    64 bytes from 10.1.0.2: icmp_seq=4 ttl=60 time=7.98 ms
+    64 bytes from 10.1.0.2: icmp_seq=5 ttl=60 time=8.25 ms
+
+    --- 10.1.0.2 ping statistics ---
+    5 packets transmitted, 5 received, 0% packet loss, time 4007ms
+    rtt min/avg/max/mdev = 6.958/8.311/10.483/1.169 ms
+    ```
+- traceroute:
+    ```
+    csc458> h1 traceroute h4
+    traceroute to 10.4.0.2 (10.4.0.2), 30 hops max, 60 byte packets
+    1  10.1.0.1 (10.1.0.1)  0.047 ms  0.008 ms  0.008 ms
+    2  10.254.0.6 (10.254.0.6)  2.451 ms  2.430 ms  2.416 ms
+    3  10.254.1.154 (10.254.1.154)  4.598 ms  4.585 ms  4.571 ms
+    4  10.254.3.46 (10.254.3.46)  6.834 ms  6.817 ms  6.803 ms
+    5  10.4.0.2 (10.4.0.2)  6.789 ms  6.775 ms  6.760 ms
+    csc458> h4 traceroute h1
+    traceroute to 10.1.0.2 (10.1.0.2), 30 hops max, 60 byte packets
+    1  10.4.0.1 (10.4.0.1)  0.027 ms  0.006 ms  0.006 ms
+    2  10.254.3.45 (10.254.3.45)  3.544 ms  3.531 ms  3.518 ms
+    3  10.254.1.153 (10.254.1.153)  6.400 ms  6.389 ms  6.377 ms
+    4  10.254.0.5 (10.254.0.5)  9.873 ms  9.861 ms  9.850 ms
+    5  10.1.0.2 (10.1.0.2)  9.838 ms  9.826 ms  9.816 ms
+    ```
+#### LS
+- status:
+    ```
+    csc458> status r1
+    {'debug': "seq=54; LSDB=['R1', 'R2', 'R3', 'R4', 'R5']; routes=10.2.0.0/24=2 via R2; 10.3.0.0/24=3 via R2; 10.4.0.0/24=5 via R2; 10.5.0.0/24=6 via R2", 'neighbors': {'R2': {'active': True, 'cost': 2}, 'R3': {'active': True, 'cost': 7}}, 'own_prefix': '10.1.0.0/24', 'protocol': 'LS', 'router_id': 'R1', 'routes': {'10.2.0.0/24': {'metric': 2, 'next_hop': 'R2'}, '10.3.0.0/24': {'metric': 3, 'next_hop': 'R2'}, '10.4.0.0/24': {'metric': 5, 'next_hop': 'R2'}, '10.5.0.0/24': {'metric': 6, 'next_hop': 'R2'}}, 'stats': {'bytes_received': 51453, 'bytes_sent': 37909, 'messages_received': 434, 'messages_sent': 326}, 'time': 1794550665.9336293}
+    csc458> status r4
+    {'debug': "seq=55; LSDB=['R1', 'R2', 'R3', 'R4', 'R5']; routes=10.1.0.0/24=5 via R3; 10.2.0.0/24=3 via R3; 10.3.0.0/24=2 via R3; 10.5.0.0/24=1 via R5", 'neighbors': {'R2': {'active': True, 'cost': 6}, 'R3': {'active': True, 'cost': 2}, 'R5': {'active': True, 'cost': 1}}, 'own_prefix': '10.4.0.0/24', 'protocol': 'LS', 'router_id': 'R4', 'routes': {'10.1.0.0/24': {'metric': 5, 'next_hop': 'R3'}, '10.2.0.0/24': {'metric': 3, 'next_hop': 'R3'}, '10.3.0.0/24': {'metric': 2, 'next_hop': 'R3'}, '10.5.0.0/24': {'metric': 1, 'next_hop': 'R5'}}, 'stats': {'bytes_received': 63833, 'bytes_sent': 68993, 'messages_received': 543, 'messages_sent': 587}, 'time': 1794550668.02332}
+    ```
+- ip route:
+    ```
+    csc458> r1 ip route
+    10.1.0.0/24 dev r1-stub proto kernel scope link src 10.1.0.1 
+    10.2.0.0/24 via 10.254.0.6 dev r1-r2 proto static metric 2 
+    10.3.0.0/24 via 10.254.0.6 dev r1-r2 proto static metric 3 
+    10.3.0.0/24 via 10.254.0.10 dev r1-r3 proto static metric 7 
+    10.4.0.0/24 via 10.254.0.6 dev r1-r2 proto static metric 5 
+    10.4.0.0/24 via 10.254.0.10 dev r1-r3 proto static metric 9 
+    10.5.0.0/24 via 10.254.0.6 dev r1-r2 proto static metric 6 
+    10.5.0.0/24 via 10.254.0.10 dev r1-r3 proto static metric 10 
+    10.5.0.0/24 via 10.254.0.10 dev r1-r3 proto static metric 12 
+    10.254.0.4/30 dev r1-r2 proto kernel scope link src 10.254.0.5 
+    10.254.0.8/30 dev r1-r3 proto kernel scope link src 10.254.0.9 
+    csc458> r4 ip route
+    10.1.0.0/24 via 10.254.3.45 dev r4-r3 proto static metric 5 
+    10.2.0.0/24 via 10.254.3.45 dev r4-r3 proto static metric 3 
+    10.3.0.0/24 via 10.254.3.45 dev r4-r3 proto static metric 2 
+    10.4.0.0/24 dev r4-stub proto kernel scope link src 10.4.0.1 
+    10.5.0.0/24 via 10.254.4.194 dev r4-r5 proto static metric 1 
+    10.254.1.156/30 dev r4-r2 proto kernel scope link src 10.254.1.158 
+    10.254.3.44/30 dev r4-r3 proto kernel scope link src 10.254.3.46 
+    10.254.4.192/30 dev r4-r5 proto kernel scope link src 10.254.4.193
+    ```
+- ping
+    ```
+    csc458> h1 ping -c 5 h4
+    PING 10.4.0.2 (10.4.0.2) 56(84) bytes of data.
+    64 bytes from 10.4.0.2: icmp_seq=1 ttl=60 time=8.15 ms
+    64 bytes from 10.4.0.2: icmp_seq=2 ttl=60 time=10.6 ms
+    64 bytes from 10.4.0.2: icmp_seq=3 ttl=60 time=8.02 ms
+    64 bytes from 10.4.0.2: icmp_seq=4 ttl=60 time=7.05 ms
+    64 bytes from 10.4.0.2: icmp_seq=5 ttl=60 time=7.12 ms
+
+    --- 10.4.0.2 ping statistics ---
+    5 packets transmitted, 5 received, 0% packet loss, time 4006ms
+    rtt min/avg/max/mdev = 7.050/8.194/10.633/1.299 ms
+    csc458> h4 ping -c 5 h1
+    PING 10.1.0.2 (10.1.0.2) 56(84) bytes of data.
+    64 bytes from 10.1.0.2: icmp_seq=1 ttl=60 time=7.23 ms
+    64 bytes from 10.1.0.2: icmp_seq=2 ttl=60 time=15.6 ms
+    64 bytes from 10.1.0.2: icmp_seq=3 ttl=60 time=9.04 ms
+    64 bytes from 10.1.0.2: icmp_seq=4 ttl=60 time=8.35 ms
+    64 bytes from 10.1.0.2: icmp_seq=5 ttl=60 time=7.38 ms
+
+    --- 10.1.0.2 ping statistics ---
+    5 packets transmitted, 5 received, 0% packet loss, time 4007ms
+    rtt min/avg/max/mdev = 7.231/9.528/15.641/3.127 ms
+    ```
+- traceroute
+    ```
+    csc458> h1 traceroute h4
+    traceroute to 10.4.0.2 (10.4.0.2), 30 hops max, 60 byte packets
+    1  10.1.0.1 (10.1.0.1)  0.037 ms  0.007 ms  0.007 ms
+    2  10.254.0.6 (10.254.0.6)  2.942 ms  2.878 ms  2.855 ms
+    3  10.254.1.154 (10.254.1.154)  5.121 ms  5.107 ms  5.093 ms
+    4  10.254.3.46 (10.254.3.46)  7.355 ms  7.341 ms  7.327 ms
+    5  10.4.0.2 (10.4.0.2)  7.312 ms  7.297 ms  7.282 ms
+    csc458> h4 traceroute h1
+    traceroute to 10.1.0.2 (10.1.0.2), 30 hops max, 60 byte packets
+    1  10.4.0.1 (10.4.0.1)  0.110 ms  0.009 ms  0.006 ms
+    2  10.254.3.45 (10.254.3.45)  2.337 ms  2.263 ms  2.246 ms
+    3  10.254.1.153 (10.254.1.153)  4.413 ms  4.378 ms  4.360 ms
+    4  10.254.0.5 (10.254.0.5)  6.611 ms  6.600 ms  6.589 ms
+    5  10.1.0.2 (10.1.0.2)  6.575 ms  6.563 ms  6.551 ms
+    ```
+
 ### B. Failure convergence
+
+- DV: Basic
+    - Initial Convergence:  0.9107216169941239
+    - Final Convergence: 0.8081829530419782
+    - Byte Delta: 1044 
+- DV: poison-reverse
+    - Initial Convergence: 1.0106469769962132
+    - Final Convergence: 0.8081087719765492
+    - Byte Delta: 824
+- LS:
+    - Initial Convergence: 0.9186841910122894
+    - Final Convergence: 0.7064711090060882
+    - Byte Delta: 1075
+
+
 
 Fill in the table for `failure_alt.json`.
 
 | Protocol | DV mode | Initial convergence (s) | Reconvergence (s) | Control messages during event | Control bytes during event |
 |---|---|---:|---:|---:|---:|
-| DV | basic | | | | |
-| DV | poison reverse | | | | |
-| LS | - | | | | |
+| DV | basic | 0.9107216169941239 | 0.8081829530419782 | 9 | 1044 |
+| DV | poison reverse | 1.0110028630006127 | 0.8243409499991685 | 7 | 824 |
+| LS | - | 0.9094949960126542 | 0.7059859220171347 | 10 | 1075 |
 
 Explain the path before and after the R2-R4 failure.
+
+- The R1-R4 path before failure goes from R1->R2->R4. This has a total path weight of 2 as the weight of R1->R2 is 1 and R2->R4 is 1. On the other hand, after failure, the new path from R1 to R4 is R1->R3->R4. This has a total path weight of 4 as the weight of R1->R3 is 2 and R3->R4 is 2.
 
 ### C. Count to infinity
 
 Run `count_to_infinity.json` with DV basic and poison reverse. From the generated control-plane capture/status, give at least three successive metrics that illustrate count-to-infinity in basic DV. Explain why poison reverse changes this behavior.
 
+Messages 24,25,26 on R2 (who's payloads are shown below), show the weight of 10.1.0.0/24 increasing by 1 each time from 10 to 11 to 12. This shows that it is slowly counting to infinity due to a loop formed betwen R2 and R3. Poison reverse removes this behavior by sending an INFINITY length to the routers who are the next hop for their path to another router. This ensures that any loops are stopped immediately, such as the one observed, by making the loop reach infinity after one loop iteration.
+
+- 24: ```
+    {"payload":{"type":"dv","vector":{"10.1.0.0/24":10,"10.2.0.0/24":1,"10.3.0.0/24":0}},"protocol":"DV"}```
+- 25: ```
+    {"payload":{"type":"dv","vector":{"10.1.0.0/24":11,"10.2.0.0/24":0,"10.3.0.0/24":1}},"protocol":"DV"}```
+-26: ```
+    {"payload":{"type":"dv","vector":{"10.1.0.0/24":12,"10.2.0.0/24":1,"10.3.0.0/24":0}},"protocol":"DV"}```
+
+
 ### D. Cost change
 
 Run `cost_change.json` with DV and LS. State the R1 -> 10.4.0.0/24 route before and after the cost change, and compare how the two protocols disseminate the new information.
 
+Route Before (cost=2): R1 -> R2 -> R4
+Route After (cost=4): R1 -> R3 -> R4
+
+The two protocols disseminate the new information very differently. DV will have the two routers see the link cost change and they will recalculate their routing table. Then they will send out new control messages which says the cost from them to any other router. Finally, each router will receive these and recalculate their internal routing tables. This means that the data being passed around is the distance from one router to another router. On the other hand a router implementing LS will see the link change and then send new control messages with this new cost. Then, each router will obtain all the link costs and recalculate their internal routing table. Compared to DV which sends the costs from any router to any other router, LS sends all the link costs and makes each router calculate the distances using Dijkstra.
+
 ### E. DV versus LS
 
 In 200-300 words, compare what each router knows, what is carried in control messages, control overhead, convergence behavior, and the failure modes you observed. Refer to your own measurements.
+
+When routers run DV, they know the cost from their neighbors to other routers and their control messages contain the cost from themself to other routers. When routers run LS, they know the link cost of every link and their control messages contain the link costs of every known link. For control overhead, DV using poison_reverse has a smaller control overhead (7 messages and 824 bytes compared to LS's 10 messages and 1075 bytes from part B's data) while LS has a faster reconvergence rate (0.7 seconds compared to DV's 0.8 seconds from part B's data). Additionally, DV using poison reverse seems to have a slightly worse initial convergence time with 1 second vs 0.9 seconds for both DV basic and LS from part B's data.
+In terms of how they converge, it is quite different between LS and DV. DV passes on the cost from itself to other routers to its neighbors who can they create their routing tables. This means every router has a limited view on the system. On the other hand, LS passes on the all the link costs. Then, the routers use Dijkstra to compute the lowest cost to all other routers. This mean that the LS routers have a view of the global system.
+For failure modes, if DV does not implement split horizon, poison reverse, or other such methods, it can quickly cause loops and count to infinity. On the other hand, LS has to be careful of sending too many advertisements as Dijkstra can be a relatively expensive computation and if there's too many new advertisements being sent, then the router time might be spent more on Dijkstra than on the packets it needs to forward.
